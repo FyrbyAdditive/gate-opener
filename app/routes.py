@@ -176,8 +176,8 @@ def capture_image():
             raw_images_dir = get_config().get('Training', 'RawImagesPath')
             os.makedirs(raw_images_dir, exist_ok=True)
             
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            filename = f"capture_{timestamp}.jpg"
+            # Use datetime for millisecond precision in filename
+            filename = f"capture_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
             filepath = os.path.join(raw_images_dir, filename)
             
             try:
@@ -190,7 +190,7 @@ def capture_image():
                     flash(f"Image '{filename}' saved, but DB record failed.", "warning")
             except Exception as e:
                 flash(f"Error saving image: {e}", "danger")
-                print(f"Error saving image: {e}")
+                logger.error(f"Error saving image file {filepath}: {e}", exc_info=True)
         else:
             flash("Failed to capture image from camera.", "danger")
     else:
