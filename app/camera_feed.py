@@ -45,6 +45,9 @@ class CameraProcessor(threading.Thread):
         self.previous_gate_action = "IDLE" # Track previous state to call custom functions only on change
         self.gate_open_duration_config = self.config.getint('Gate', 'OpenDuration', fallback=5)
 
+        self.latest_raw_frame_for_capture = None
+        self.raw_frame_lock = threading.Lock() # Lock for accessing the raw frame
+
         self.fps = 0
         self.frame_count = 0
         self.start_time = time.time()
@@ -116,6 +119,11 @@ class CameraProcessor(threading.Thread):
 
                 # Resize frame if necessary (though cap.set should handle it)
                 frame = cv2.resize(frame, (self.frame_width, self.frame_height))
+                
+                # Store a copy of this raw, resized frame for capture for training
+                # This is done before any overlays are added for the live feed.
+                with self.raw_frame_lock:
+                    self.latest_raw_frame_for_capture = frame.copy()
                 
                 # Process frame with YOLO
                 processed_frame, detections = self.yolo_processor.detect_and_track(
@@ -208,12 +216,11 @@ class CameraProcessor(threading.Thread):
         logger.info("CameraProcessor stop requested.")
 
     def capture_current_frame_for_training(self):
-        if self.cap and self.cap.isOpened():
-            ret, frame = self.cap.read() # Get a fresh frame
-            if ret:
-                frame = cv2.resize(frame, (self.frame_width, self.frame_height))
-                return frame
-        return None
+        # Return a copy of the latest raw frame processed by the main loop
+        with self.raw_frame_lock:
+            if self.latest_raw_frame_for_capture is not None:
+                return self.latest_raw_frame_for_capture.copy()
+        return None # Return None if no frame has been captured yet
 
     def get_yolo_processor(self): # To access training methods etc.
         return self.yolo_processor
