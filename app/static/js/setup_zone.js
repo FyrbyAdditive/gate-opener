@@ -32,12 +32,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
     canvas.addEventListener('click', function (event) {
         const rect = canvas.getBoundingClientRect(); // Gets the actual size and position of canvas on screen
+
+        // Prevent division by zero if canvas is not visible or has no dimensions
+        if (rect.width === 0 || rect.height === 0) {
+            console.warn("Canvas display dimensions are zero. Click ignored.");
+            return;
+        }
+
         // Calculate click relative to the canvas element
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
 
-        // Normalize points based on the canvas's drawing buffer size (canvas.width, canvas.height)
-        points.push({ x: x / canvas.width, y: y / canvas.height });
+        // Normalize points based on the canvas's actual displayed size (rect.width, rect.height).
+        // This ensures the normalized coordinates (0-1) correctly represent the click's
+        // proportional position on the video, regardless of how the video (and canvas) is scaled for display.
+        points.push({ x: x / rect.width, y: y / rect.height });
         draw();
         updateSaveButtonState();
         updatePointsDisplay();
