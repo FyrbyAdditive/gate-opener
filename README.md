@@ -5,7 +5,7 @@ A python web application for opening and closing a gate with AI detection of... 
 You can choose to use the existing categories provided by the model, but also provided is a really simple training interface that allows you to get good results by training it on real things in your yard, so how you trigger it is entirely up to you!
 
 Other useful points:
-- Supports HTTPS & HTTP
+- Web interface supports HTTPS & HTTP
 - Username/password optional
 - Supports local USB and various different types of network camera e.g. RTSP and others
 - Um, opens gates
@@ -21,6 +21,19 @@ git clone https://github.com/FyrbyAdditive/gate-opener
 cd gate-opener
 pip install -r requirements.txt
 python run.py
+```
+### Models
+If you have performance issues, you may like to try a smaller model. By default, yolov8s.pt is used which is a small sized model. Here are the available models, in order of size:
+- yolov8n.pt
+- yolov8s.pt
+- yolov8m.pt
+- yolov8l.pt
+- yolov8x.pt
+Enter your choice into the relevant bit of config.ini:
+```
+[YOLO]
+; Ensure this model is available
+ModelPath = yolov8s.pt
 ```
 ### Use
 

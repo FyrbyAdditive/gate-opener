@@ -210,6 +210,11 @@ def start_training():
     db_conn = get_db()
     all_db_images = get_all_images() # Get all images that might have annotations
     
+    if not all_db_images:
+        flash("Cannot start training: No images have been captured or added to the database yet.", "warning")
+        logger.warning("Training start attempted with no images in the database.")
+        return redirect(url_for('main.training_page'))
+
     # Get class map {id: name}
     classes_rows = get_all_classes()
     class_map = {row['id']: row['name'] for row in classes_rows}
