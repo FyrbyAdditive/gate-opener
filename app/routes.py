@@ -19,11 +19,12 @@ along with this program; if not, see
 from flask import (
     Blueprint, render_template, Response, request, redirect, url_for, jsonify, current_app, flash
 )
-from flask import send_from_directory # Import send_from_directory
+from flask import send_from_directory
 import os
 import time
-import json # Import the json module
-from datetime import datetime # Import datetime
+import cv2
+import json
+from datetime import datetime
 
 from .auth import auth_required
 from . import get_latest_frame, get_detection_stats, camera_processor_instance
@@ -36,10 +37,9 @@ from .db_utils import (
 from .yolo_utils import prepare_yolo_dataset # For training data prep
 from .gate_control_interface import custom_open_gate, custom_close_gate # For manual control
 
-import logging # Add logging import
+import logging
 main_bp = Blueprint('main', __name__)
-logger = logging.getLogger(__name__) # Get a logger instance
-
+logger = logging.getLogger(__name__)
 
 # --- Helper ---
 def get_config():
