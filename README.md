@@ -22,6 +22,13 @@ cd gate-opener
 pip install -r requirements.txt
 python run.py
 ```
+### Camera Configuration
+There are various ways to setup a camera including:
+- Local camera indexes (like 0, 1, etc.)
+- Video file paths (e.g., /path/to/video.mp4)
+- RTSP streams (e.g., rtsp://username:password@ip_address:port/stream_path)
+- HTTP MJPEG streams (e.g., http://ip_address/video.mjpg
+
 ### Models
 If you have performance issues, you may like to try a smaller model. By default, yolov8s.pt is used which is a small sized model. Here are the available models, in order of size:
 - yolov8n.pt
@@ -29,6 +36,7 @@ If you have performance issues, you may like to try a smaller model. By default,
 - yolov8m.pt
 - yolov8l.pt
 - yolov8x.pt
+
 Enter your choice into the relevant bit of config.ini:
 ```
 [YOLO]
