@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Model Training - Gate Controller{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Left Column: Video Feed, Capture, Training, Classes -->
+    <div class="col-md-5">
+        <h2 class="mb-3">Live Feed for Capture</h2>
+        <div class="video-container-small bg-secondary mb-3">
+            <img src="{{ url_for('main.video_feed') }}" alt="Live Video Feed" class="img-fluid">
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">Image Capture & Training</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.capture_image') }}" class="d-inline-block me-2">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-camera-fill"></i> Capture Image</button>
+                </form>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#startTrainingModal">
+                    <i class="bi bi-activity"></i> Start Training
+                </button>
+                <p class="form-text mt-1">Captured images saved to: <code>{{ raw_images_path_display }}</code></p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Manage YOLO Classes</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.training_add_class') }}" class="mb-3">
+                    <div class="input-group">
+                        <input type="text" name="class_name" class="form-control" placeholder="New class name" required>
+                        <button type="submit" class="btn btn-outline-success"><i class="bi bi-plus-circle"></i> Add</button>
+                    </div>
+                </form>
+                <h5>Existing Classes:</h5>
+                {% if classes %}
+                <ul class="list-group">
+                    {% for class_item in classes %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div class="form-check">
+                            <input class="form-check-input trigger-checkbox" 
+                                   type="checkbox" 
+                                   value="" 
+                                   id="triggerCheck{{ class_item.id }}" 
+                                   data-class-id="{{ class_item.id }}"
+                                   {% if class_item.is_trigger %}checked{% endif %}>
+                            <label class="form-check-label" for="triggerCheck{{ class_item.id }}">
+                                {{ class_item.name }} (ID: {{ class_item.id }})
+                            </label>
+                        </div>
+                        <div>
+                            <form method="POST" action="{{ url_for('main.training_delete_class', class_id=class_item.id) }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete class \'{{ class_item.name }}\' and all its annotations?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted">No classes defined yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Image List -->
+    <div class="col-md-7">
+        <h2 class="mb-3">Captured Images for Training</h2>
+        {% if images %}
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3">
+            {% for image in images %}
+            <div class="col">
+                <div class="card shadow-sm">
+                    <img src="{{ url_for('main.serve_raw_image', filename=image.filename) }}" class="card-img-top" alt="{{ image.filename }}" style="height: 180px; object-fit: cover;">
+                    <div class="card-body">
+                        <p class="card-text small">{{ image.filename }}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="btn-group">
+                                <a href="{{ url_for('main.edit_image_page', image_id=image.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square"></i> Edit</a>
+                                <form method="POST" action="{{ url_for('main.training_delete_image', image_id=image.id) }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete image \'{{ image.filename }}\' and its annotations?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete</button>
+                                </form>
+                            </div>
+                            <small class="text-muted">{{ image.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">No images captured yet. Use the "Capture Image" button.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Start Training Modal -->
+<div class="modal fade" id="startTrainingModal" tabindex="-1" aria-labelledby="startTrainingModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="startTrainingModalLabel">Start YOLO Model Training</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST" action="{{ url_for('main.start_training') }}">
+        <div class="modal-body">
+          <p>This will prepare the dataset from all annotated images and start training the YOLOv8 model. This process can take a significant amount of time and resources.</p>
+          <div class="mb-3">
+            <label for="epochs" class="form-label">Number of Epochs:</label>
+            <input type="number" class="form-control" id="epochs" name="epochs" value="50" min="1">
+          </div>
+          <div class="mb-3">
+            <label for="imgsz" class="form-label">Image Size (imgsz):</label>
+            <input type="number" class="form-control" id="imgsz" name="imgsz" value="640" min="320" step="32">
+          </div>
+          <p class="text-muted small">Ensure you have enough annotated images and correctly defined classes before starting.</p>
+          <!-- Training Status Indicator -->
+          <div id="trainingStatusIndicator" class="alert alert-info" style="display: none;">
+            <div class="d-flex align-items-center">
+              <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <strong>Training in progress... Please wait. This may take several minutes.</strong>
+            </div>
+            <p class="small mt-1 mb-0">The page will refresh once training is complete.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success" id="startTrainingSubmitButton"><i class="bi bi-activity"></i> Start Training</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }} {# Includes scripts from base.html if any #}
+<script>
+// Script for Training Status Indicator
+document.addEventListener('DOMContentLoaded', function () {
+    const trainingForm = document.querySelector('#startTrainingModal form');
+    const trainingStatusIndicator = document.getElementById('trainingStatusIndicator');
+    const startTrainingSubmitButton = document.getElementById('startTrainingSubmitButton');
+
+    if (trainingForm && trainingStatusIndicator && startTrainingSubmitButton) {
+        trainingForm.addEventListener('submit', function() {
+            trainingStatusIndicator.style.display = 'block'; // Show the indicator
+            startTrainingSubmitButton.disabled = true; // Disable the button
+            startTrainingSubmitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Starting...'; // Change button text
+        });
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    const checkboxes = document.querySelectorAll('.trigger-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function () {
+            const classId = this.dataset.classId;
+            const isTrigger = this.checked;
+
+            fetch("{{ url_for('main.training_update_trigger_status') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // If you use Flask-WTF for CSRF protection on AJAX, include the token:
+                    // 'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}' // Add this if CSRF is enabled for AJAX
+                },
+                body: JSON.stringify({
+                    class_id: classId,
+                    is_trigger: isTrigger
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(errData => {
+                        throw new Error(errData.message || `Server error: ${response.status}`);
+                    }).catch(() => {
+                        throw new Error(`Server error: ${response.status}`);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    console.log("Trigger status updated:", data.message);
+                    // You could add a Bootstrap toast or a small temporary message here for user feedback
+                } else {
+                    console.error("Failed to update trigger status:", data.message);
+                    this.checked = !isTrigger; // Revert checkbox on failure
+                    alert("Error updating trigger status: " + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error making request:', error);
+                this.checked = !isTrigger; // Revert checkbox on network error
+                alert("Network error updating trigger status: " + error.message);
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

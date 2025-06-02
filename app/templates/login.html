@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Gate Controller{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <h2 class="text-center mb-4">Login</h2>
+        {% if config.WebServer.Username %}
+            <p class="text-center text-muted">This application uses Basic Authentication. Your browser should have prompted you for credentials.</p>
+            <p class="text-center"><a href="{{ url_for('main.index') }}">Go to application</a></p>
+        {% else %}
+            <p class="text-center text-muted">Authentication is currently disabled (no username set in config).</p>
+            <p class="text-center"><a href="{{ url_for('main.index') }}">Go to application</a></p>
+        {% endif %}
+        
+        <!-- Example Form (not functional with current Basic Auth setup)
+        <form method="POST" action="{{ url_for('main.login') }}">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="username" name="username" required>
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Login</button>
+        </form>
+        -->
+    </div>
+</div>
+{% endblock %}
+

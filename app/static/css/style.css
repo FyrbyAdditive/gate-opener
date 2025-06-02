@@ -1,0 +1,51 @@
+body {
+    padding-top: 56px; /* Adjust if navbar height changes */
+    padding-bottom: 60px; /* For the footer */
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+main.container {
+    flex: 1; /* Allows main content to grow and push footer down */
+}
+
+.video-container img,
+.video-container-small img {
+    width: 100%;
+    height: auto;
+    background-color: #333; /* Placeholder background */
+    border: 1px solid #444;
+}
+.video-container-small {
+    max-height: 300px; /* Or as desired */
+    overflow: hidden;
+}
+
+
+/* For edit_image.html canvas */
+#annotationCanvasContainer {
+    position: relative;
+    display: inline-block; /* Crucial for canvas positioning */
+    border: 1px solid #ccc;
+    cursor: crosshair;
+    max-width: 100%; /* Ensure it's responsive */
+}
+
+#annotationImage {
+    display: block; /* Remove extra space below image */
+    max-width: 100%;
+    height: auto; /* Maintain aspect ratio */
+}
+
+#annotationCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* Width and height set by JS to match image */
+}
+
+.footer {
+    background-color: #f8f9fa; /* Bootstrap light grey */
+}
+

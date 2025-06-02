@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Image Annotations - {{ image.filename }}{% endblock %}
+
+{% block head_extra %}
+<style>
+    #annotationCanvasContainer {
+        position: relative;
+        display: inline-block; /* Or width: max-content; */
+        border: 1px solid #ccc;
+        cursor: crosshair;
+    }
+    #annotationImage {
+        display: block;
+        max-width: 100%;
+        height: auto;
+    }
+    #annotationCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+    .annotation-box { /* For displaying existing annotations if needed outside canvas */
+        border: 2px solid red;
+        position: absolute;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">Edit Annotations for: <span class="fw-normal">{{ image.filename }}</span></h2>
+<div class="row">
+    <div class="col-md-8">
+        <p>Click and drag on the image to draw a bounding box. Select the class for the current box.</p>
+        <div id="annotationCanvasContainer">
+            <img id="annotationImage" src="{{ image_url }}" alt="{{ image.filename }}">
+            <canvas id="annotationCanvas"></canvas>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <h4>Controls & Annotations</h4>
+        <div class="mb-3">
+            <label for="currentClassSelect" class="form-label">Current Class for New Box:</label>
+            <select id="currentClassSelect" class="form-select">
+                {% for class_item in classes %}
+                <option value="{{ class_item.name }}">{{ class_item.name }}</option>
+                {% else %}
+                <option value="" disabled>No classes defined. Add classes on Training page.</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button id="clearLastBoxButton" class="btn btn-warning mb-2"><i class="bi bi-arrow-counterclockwise"></i> Undo Last Box</button>
+        <button id="clearAllBoxesButton" class="btn btn-danger mb-3"><i class="bi bi-trash2"></i> Clear All Boxes</button>
+
+        <form id="annotationForm" method="POST" action="{{ url_for('main.edit_image_page', image_id=image.id) }}">
+            <input type="hidden" name="annotations" id="annotationsDataInput">
+            <button type="submit" class="btn btn-success w-100"><i class="bi bi-save"></i> Save All Annotations</button>
+        </form>
+        
+        <h5 class="mt-4">Current Annotations:</h5>
+        <ul id="annotationList" class="list-group" style="max-height: 300px; overflow-y: auto;">
+            <!-- Annotations will be listed here by JS -->
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const image = document.getElementById('annotationImage');
+    const canvas = document.getElementById('annotationCanvas');
+    const ctx = canvas.getContext('2d');
+    const classSelect = document.getElementById('currentClassSelect');
+    const annotationListEl = document.getElementById('annotationList');
+    const annotationsDataInput = document.getElementById('annotationsDataInput');
+    const annotationForm = document.getElementById('annotationForm');
+
+    let drawing = false;
+    let startX, startY;
+    let currentRect = {}; // For the box being drawn
+    let annotations = []; // Array of {x, y, w, h, className}
+
+    // Load existing annotations passed from backend
+    const existingAnnotationsJson = {{ annotations_json|safe }};
+    if (existingAnnotationsJson && Array.isArray(existingAnnotationsJson)) {
+        annotations = existingAnnotationsJson;
+    }
+
+    function resizeCanvas() {
+        // Ensure canvas is exactly on top of the image
+        canvas.width = image.offsetWidth;
+        canvas.height = image.offsetHeight;
+        // If image has natural dimensions different from offset, need to scale drawings
+        // For simplicity, assuming offsetWidth/Height are the display dimensions to draw upon
+        drawAnnotations();
+    }
+
+    image.onload = function() {
+        resizeCanvas(); // Initial resize and draw
+    };
+    // If image is already loaded (e.g. cached)
+    if (image.complete) {
+        resizeCanvas();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+
+    function drawRect(rect, color = 'red') {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        if (rect.className) {
+            ctx.fillStyle = color;
+            ctx.font = '12px Arial';
+            ctx.fillText(rect.className, rect.x + 2, rect.y + 12);
+        }
+    }
+
+    function drawAnnotations() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        annotations.forEach(ann => drawRect(ann));
+        if (drawing && currentRect.w && currentRect.h) {
+            drawRect(currentRect, 'blue'); // Draw current interactive box
+        }
+        updateAnnotationListUI();
+    }
+
+    canvas.addEventListener('mousedown', function(e) {
+        if (classSelect.value === "") {
+            alert("Please select a class first or add classes on the Training page.");
+            return;
+        }
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+        drawing = true;
+        currentRect = { x: startX, y: startY, w: 0, h: 0, className: classSelect.value };
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+        if (!drawing) return;
+        const rect = canvas.getBoundingClientRect();
+        let currentX = e.clientX - rect.left;
+        let currentY = e.clientY - rect.top;
+
+        currentRect.w = currentX - startX;
+        currentRect.h = currentY - startY;
+        drawAnnotations(); // Redraw all + current
+    });
+
+    canvas.addEventListener('mouseup', function() {
+        if (!drawing) return;
+        drawing = false;
+        // Normalize rectangle (width/height can be negative if drawn backwards)
+        if (currentRect.w < 0) {
+            currentRect.x += currentRect.w;
+            currentRect.w = Math.abs(currentRect.w);
+        }
+        if (currentRect.h < 0) {
+            currentRect.y += currentRect.h;
+            currentRect.h = Math.abs(currentRect.h);
+        }
+
+        if (currentRect.w > 5 && currentRect.h > 5) { // Minimum size for a box
+            annotations.push({...currentRect});
+        }
+        currentRect = {}; // Reset current drawing rect
+        drawAnnotations();
+    });
+    
+    canvas.addEventListener('mouseleave', function() { // If mouse leaves canvas while drawing
+        if (drawing) {
+            // Optionally finalize the box or cancel it
+            // For simplicity, let's finalize if it has some size
+            drawing = false;
+             if (currentRect.w < 0) { currentRect.x += currentRect.w; currentRect.w = Math.abs(currentRect.w); }
+             if (currentRect.h < 0) { currentRect.y += currentRect.h; currentRect.h = Math.abs(currentRect.h); }
+            if (currentRect.w > 5 && currentRect.h > 5) {
+                annotations.push({...currentRect});
+            }
+            currentRect = {};
+            drawAnnotations();
+        }
+    });
+
+    document.getElementById('clearLastBoxButton').addEventListener('click', function() {
+        if (annotations.length > 0) {
+            annotations.pop();
+            drawAnnotations();
+        }
+    });
+
+    document.getElementById('clearAllBoxesButton').addEventListener('click', function() {
+        if (confirm("Are you sure you want to clear all drawn boxes on this image?")) {
+            annotations = [];
+            drawAnnotations();
+        }
+    });
+
+    annotationForm.addEventListener('submit', function(e) {
+        // The annotations array already contains x, y, w, h in pixel values relative to the displayed image.
+        // The backend will convert these to YOLO format (relative to natural image dimensions).
+        annotationsDataInput.value = JSON.stringify(annotations);
+    });
+
+    function updateAnnotationListUI() {
+        annotationListEl.innerHTML = '';
+        if (annotations.length === 0) {
+            annotationListEl.innerHTML = '<li class="list-group-item text-muted">No annotations yet. Draw on the image.</li>';
+            return;
+        }
+        annotations.forEach((ann, index) => {
+            const listItem = document.createElement('li');
+            listItem.className = 'list-group-item small';
+            listItem.textContent = `Box ${index + 1}: ${ann.className} (x:${Math.round(ann.x)}, y:${Math.round(ann.y)}, w:${Math.round(ann.w)}, h:${Math.round(ann.h)})`;
+            annotationListEl.appendChild(listItem);
+        });
+    }
+    
+    // Initial draw if there are pre-loaded annotations
+    // resizeCanvas will call drawAnnotations which calls updateAnnotationListUI
+    // If image is not yet loaded, image.onload will trigger it.
+    // If image is loaded, resizeCanvas() was already called.
+});
+</script>
+{% endblock %}
+

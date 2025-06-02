@@ -1,0 +1,12 @@
+Flask>=2.0
+Flask-Login>=0.5
+ultralytics>=8.0
+opencv-python>=4.5
+numpy>=1.20
+Pillow>=8.0
+python-dotenv>=0.15 # For .env file if preferred over config.ini directly
+gunicorn # Optional: for production
+waitress # Optional: WSGI server for Windows
+PyYAML # Dependency for ultralytics
+requests # For downloading model if you add that feature
+

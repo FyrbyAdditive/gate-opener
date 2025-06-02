@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Live Feed - Gate Controller{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2 class="mb-3">Live Video Feed</h2>
+        <div class="video-container bg-secondary mb-3">
+            <img id="videoFeed" src="{{ url_for('main.video_feed') }}" alt="Live Video Feed" class="img-fluid">
+        </div>
+    </div>
+    <div class="col-md-4">
+        <h2 class="mb-3">Status & Controls</h2>
+        <div class="card mb-3">
+            <div class="card-header">Detection Info</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item"><strong>FPS:</strong> <span id="statFps">N/A</span></li>
+                <li class="list-group-item"><strong>Device:</strong> <span id="statDevice">N/A</span></li>
+                <li class="list-group-item"><strong>Last Update:</strong> <span id="statLastUpdate">N/A</span></li>
+                <li class="list-group-item"><strong>Gate Status:</strong> <span id="statGateStatus" class="fw-bold">N/A</span></li>
+            </ul>
+        </div>
+        <div class="card">
+            <div class="card-header">Manual Gate Control</div>
+            <div class="card-body text-center">
+                <form method="POST" action="{{ url_for('main.manual_gate_control') }}" class="d-inline-block me-2">
+                    <input type="hidden" name="action" value="open">
+                    <button type="submit" id="manualOpenBtn" class="btn btn-success"><i class="bi bi-door-open-fill"></i> Open Gate</button>
+                </form>
+                <form method="POST" action="{{ url_for('main.manual_gate_control') }}" class="d-inline-block">
+                    <input type="hidden" name="action" value="close">
+                    <button type="submit" id="manualCloseBtn" class="btn btn-danger"><i class="bi bi-door-closed-fill"></i> Close Gate</button>
+                </form>
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-header">Current Detections</div>
+            <div class="card-body" id="currentDetectionsList" style="max-height: 200px; overflow-y: auto;">
+                <small class="text-muted">No detections yet.</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Tell backend to SHOW the persistent zone on the video stream for this page
+        fetch("{{ url_for('main.set_stream_zone_visibility') }}", {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({visible: true})
+        }).then(response => response.json())
+        .then(data => console.log('Live feed page: stream zone visibility set to true.', data))
+        .catch(error => console.error('Error setting stream zone visibility:', error));
+    });
+    
+    function updateStats() {
+        fetch("{{ url_for('main.detection_stats_json') }}")
+            .then(response => response.json())
+            .then(data => {
+                const manualOpenBtn = document.getElementById('manualOpenBtn');
+                const manualCloseBtn = document.getElementById('manualCloseBtn');
+
+                document.getElementById('statFps').textContent = data.fps ? data.fps.toFixed(2) : 'N/A';
+                document.getElementById('statDevice').textContent = data.device || 'N/A';
+                document.getElementById('statLastUpdate').textContent = data.last_detection_time_str || 'N/A';
+                
+                const gateStatusEl = document.getElementById('statGateStatus');
+                gateStatusEl.textContent = data.gate_status || 'N/A';
+                gateStatusEl.className = 'fw-bold'; // Reset class
+                if (data.gate_status && data.gate_status.toLowerCase().includes('open')) {
+                    gateStatusEl.classList.add('text-success');
+                } else if (data.gate_status && data.gate_status.toLowerCase().includes('close')) {
+                     gateStatusEl.classList.add('text-danger');
+                }
+
+
+                const detectionsListEl = document.getElementById('currentDetectionsList');
+                if (data.detections && data.detections.length > 0) {
+                    let html = '<ul class="list-unstyled">';
+                    data.detections.forEach(det => {
+                        let statusText = "";
+                        if (det.hasOwnProperty('is_in_zone')) {
+                            statusText = det.is_in_zone ? "IN ZONE" : "OUTSIDE ZONE";
+                        }
+                        html += `<li>${det.class_name} (${det.confidence.toFixed(2)}) ${statusText ? '- ' + statusText : ''}</li>`;
+                    });
+                    html += '</ul>';
+                    detectionsListEl.innerHTML = html;
+                } else {
+                    detectionsListEl.innerHTML = '<small class="text-muted">No current detections.</small>';
+                }
+
+                // Disable manual controls if an object is in the zone
+                if (data.object_in_zone) {
+                    manualOpenBtn.disabled = true;
+                    manualCloseBtn.disabled = true;
+                } else {
+                    manualOpenBtn.disabled = false;
+                    manualCloseBtn.disabled = false;
+                }
+            })
+            .catch(error => console.error('Error fetching stats:', error));
+    }
+    setInterval(updateStats, 2000); // Update every 2 seconds
+    updateStats(); // Initial call
+</script>
+{% endblock %}

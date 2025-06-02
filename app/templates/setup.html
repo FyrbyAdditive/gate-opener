@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Setup Activation Zone{% endblock %}
+
+{% block head_extra %}
+<style>
+    #videoContainer {
+        position: relative; /* Match video width */ /* Match video height */
+        width: {{ config_manager.getint('Webcam', 'FrameWidth', fallback=640) }}px;
+        height: {{ config_manager.getint('Webcam', 'FrameHeight', fallback=480) }}px;
+        margin: auto;
+        border: 1px solid #ccc;
+    }
+    #videoFeed {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+    #drawingCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        cursor: crosshair;
+    }
+    .controls {
+        text-align: center;
+        margin-top: 10px;
+    }
+    .controls button {
+        margin: 5px;
+        padding: 8px 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="text-center">Setup Activation Zone</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div id="videoContainer">
+        <img id="videoFeed" src="{{ url_for('main.video_feed') }}" alt="Live Feed">
+        <canvas id="drawingCanvas"></canvas>
+    </div>
+
+    <div class="controls">
+        <button id="clearZoneBtn" class="btn btn-warning">Clear Current Points</button>
+        <button id="undoPointBtn" class="btn btn-info">Undo Last Point</button>
+        <button id="saveZoneBtn" class="btn btn-success" disabled>Save Zone</button>
+    </div>
+    <p class="text-center small mt-2">
+        Click on the video feed to define points for the activation zone.
+        A minimum of 3 points are required to form a zone. The zone will automatically close.
+    </p>
+    <p class="text-center small">
+        Current points: <code id="currentPointsDisplay">N/A</code>
+    </p>
+
+</div>
+
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    // Constants for video dimensions - must match backend/CSS
+    const videoWidth = {{ config_manager.getint('Webcam', 'FrameWidth', fallback=640) }};
+    const videoHeight = {{ config_manager.getint('Webcam', 'FrameHeight', fallback=480) }};
+</script>
+<script src="{{ url_for('static', filename='js/setup_zone.js') }}"></script>
+{% endblock %}
