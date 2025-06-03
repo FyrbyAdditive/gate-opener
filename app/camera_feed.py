@@ -51,6 +51,10 @@ class CameraProcessor(threading.Thread):
         self.fps = 0
         self.frame_count = 0
         self.start_time = time.time()
+        # Inference FPS control
+        self.max_inference_fps = self.config.getint('YOLO', 'MaxInferenceFPS', fallback=0)
+        self.inference_frame_delay = 1.0 / self.max_inference_fps if self.max_inference_fps > 0 else 0
+
         self.db_trigger_classes = [] # Cache for class names from DB for gate triggering
 
     def _init_camera(self):
@@ -101,6 +105,7 @@ class CameraProcessor(threading.Thread):
 
         self._load_db_trigger_classes() # Load classes from DB at thread start
 
+        last_inference_time = time.time() # For FPS limiter
         logger.info(f"Camera processing thread started. Gate open duration after zone clear: {self.gate_open_duration_config}s")
 
         while self.running:
@@ -125,6 +130,15 @@ class CameraProcessor(threading.Thread):
                 with self.raw_frame_lock:
                     self.latest_raw_frame_for_capture = frame.copy()
                 
+                # --- Inference FPS Limiter ---
+                if self.inference_frame_delay > 0:
+                    current_time_for_fps_limit = time.time()
+                    elapsed_since_last_inference = current_time_for_fps_limit - last_inference_time
+                    if elapsed_since_last_inference < self.inference_frame_delay:
+                        sleep_duration = self.inference_frame_delay - elapsed_since_last_inference
+                        time.sleep(sleep_duration)
+                    last_inference_time = time.time() # Update after potential sleep
+
                 # Process frame with YOLO
                 processed_frame, detections = self.yolo_processor.detect_and_track(
                     frame.copy(), # Send a copy
@@ -138,12 +152,6 @@ class CameraProcessor(threading.Thread):
                     self.fps = self.frame_count / elapsed_time
                     self.frame_count = 0
                     self.start_time = time.time()
-
-                # Overlay info on frame
-                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                cv2.putText(processed_frame, f"FPS: {self.fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                cv2.putText(processed_frame, timestamp, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                cv2.putText(processed_frame, f"Device: {self.yolo_processor.get_device()}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
                 # Encode frame to JPEG
                 encode_ret, buffer = cv2.imencode('.jpg', processed_frame)

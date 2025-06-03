@@ -28,10 +28,17 @@ logger = logging.getLogger(__name__)
 class YOLOProcessor:
     def __init__(self, config):
         self.config = config
-        self.model_path = self.config.get('YOLO', 'ModelPath')
-        # Clean the model_path to remove any inline comments
-        if ';' in self.model_path:
-            self.model_path = self.model_path.split(';', 1)[0].strip()
+        self.base_model_path = self.config.get('YOLO', 'BaseModelPath') # Path to the initial model for training
+        # Clean the base_model_path to remove any inline comments
+        if ';' in self.base_model_path:
+            self.base_model_path = self.base_model_path.split(';', 1)[0].strip()
+
+        # model_for_inference_path will point to the model currently used for detection.
+        # It could be the base model or the last successfully trained custom model.
+        self.model_for_inference_path = self.config.get('YOLO', 'LastTrainedModelPath', fallback=self.base_model_path)
+        if not self.model_for_inference_path or not os.path.exists(self.model_for_inference_path):
+            self.model_for_inference_path = self.base_model_path # Fallback if LastTrainedModelPath is invalid
+
         self.conf_threshold = self.config.getfloat('YOLO', 'ConfidenceThreshold')
         # Initialize with config, but can be updated dynamically
         self.target_classes_names_for_direction_tracking = self.config.get_list('YOLO', 'TargetClasses') 
@@ -42,13 +49,13 @@ class YOLOProcessor:
 
         try:
             logger.info(f"Current working directory: {os.getcwd()}")
-            logger.info(f"Attempting to load model from (cleaned path): '{self.model_path}' which resolves to: '{os.path.abspath(self.model_path)}'")
-            self.model = YOLO(self.model_path)
+            logger.info(f"Attempting to load model for inference from: '{self.model_for_inference_path}' which resolves to: '{os.path.abspath(self.model_for_inference_path)}'")
+            self.model = YOLO(self.model_for_inference_path)
             self.model.to(self.device)
             # Perform a dummy inference to ensure model is loaded and warm up
             dummy_img = np.zeros((self.config.getint('Webcam', 'FrameHeight'), self.config.getint('Webcam', 'FrameWidth'), 3), dtype=np.uint8)
             self.model(dummy_img, verbose=False) 
-            logger.info(f"YOLOv8 model '{self.model_path}' loaded successfully on {self.device}.")
+            logger.info(f"YOLOv8 model '{self.model_for_inference_path}' loaded successfully for inference on {self.device}.")
         except Exception as e:
             logger.error(f"Error loading YOLOv8 model: {e}")
             print(f"Error loading YOLOv8 model: {e}")
@@ -171,13 +178,11 @@ class YOLOProcessor:
             return False, "Model not loaded."
         
         try:
-            # The base model (e.g., yolov8s.pt) will be used for transfer learning
-            # The 'model' instance here is already loaded with self.model_path
-            # For training, you typically specify the base model like YOLO('yolov8s.yaml').load('yolov8s.pt')
-            # or just YOLO('yolov8s.pt') and then call train.
-            # Let's assume we are fine-tuning the loaded self.model_path
-            
-            training_model = YOLO(self.model_path) # Re-init for training to ensure clean state if needed
+            # Always start training from the base model path specified in config
+            logger.info(f"Initializing training from base model: {self.base_model_path}")
+            training_model = YOLO(self.base_model_path) 
+            # Note: If base_model_path is just 'yolov8s.pt', it downloads if not present.
+            # If it's a path to a .yaml (like 'yolov8s.yaml'), it builds the model and then would typically load weights if specified.
             
             logger.info(f"Starting YOLOv8 training with data: {data_yaml_path}, epochs: {epochs}, imgsz: {imgsz}")
             results = training_model.train(
@@ -202,17 +207,17 @@ class YOLOProcessor:
                     new_model(dummy_img, verbose=False)
                     
                     self.model = new_model # Atomically update the model
-                    self.model_path = best_model_path # Update the internal model_path attribute
-                    logger.info(f"Successfully reloaded active model with {best_model_path} on {self.device}")
+                    self.model_for_inference_path = best_model_path # Update the path for the current inference model
+                    logger.info(f"Successfully reloaded active model for inference with {best_model_path} on {self.device}")
 
-                    # Update config file with the new model path
+                    # Update config file with the new *LastTrainedModelPath*
                     try:
-                        self.config.set_value('YOLO', 'ModelPath', best_model_path)
+                        self.config.set_value('YOLO', 'LastTrainedModelPath', best_model_path)
                         self.config.save()
-                        logger.info(f"Updated config file: YOLO ModelPath set to {best_model_path}")
+                        logger.info(f"Updated config file: YOLO LastTrainedModelPath set to {best_model_path}")
                     except Exception as e_config:
                         logger.error(f"Failed to update config file with new model path: {e_config}", exc_info=True)
-                        # Continue, as model reload itself was successful
+                        # Continue, as model reload for inference itself was successful
                 except Exception as e_reload:
                     logger.error(f"Failed to reload the newly trained model: {e_reload}", exc_info=True)
                     return True, f"Training successful (best model: {best_model_path}), but failed to auto-reload model."
