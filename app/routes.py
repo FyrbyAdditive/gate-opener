@@ -97,7 +97,18 @@ def video_feed():
 @auth_required
 def detection_stats_json():
     stats = get_detection_stats()
+    config = get_config() # Get ConfigManager instance
     
+    # Ensure 'detection_enabled' boolean is reliably in the output.
+    # The CameraProcessor instance is the source of truth for its current operational state.
+    current_detection_enabled_state = None
+    if camera_processor_instance:
+        current_detection_enabled_state = camera_processor_instance.detection_enabled
+    else:
+        # Fallback if camera_processor_instance is not available (e.g., very early startup)
+        current_detection_enabled_state = config.get_boolean('YOLO', 'DetectionEnabledByDefault', fallback=True)
+    stats['detection_enabled'] = current_detection_enabled_state
+
     def convert_numpy_types(data):
         """Recursively converts numpy types in a dictionary or list to Python natives."""
         if isinstance(data, dict):
@@ -115,6 +126,9 @@ def detection_stats_json():
     # Format timestamp if it exists
     if stats.get('last_detection_time'):
         stats['last_detection_time_str'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stats['last_detection_time']))
+
+    # Add an explicit text status for detection, using the reliably determined current_detection_enabled_state
+    stats['detection_status_text'] = "Enabled" if current_detection_enabled_state else "Disabled"
 
     return jsonify(stats)
 
@@ -144,6 +158,22 @@ def manual_gate_control():
         logger.warning(f"Unknown manual gate action: '{action}'")
 
     return redirect(url_for('main.live_feed'))
+
+@main_bp.route('/toggle_detection', methods=['POST'])
+@auth_required
+def toggle_detection():
+    if camera_processor_instance:
+        # Optionally, allow forcing a state via request data
+        # data = request.get_json(silent=True)
+        # new_state = data.get('enable') if data else None
+        # current_status = camera_processor_instance.toggle_detection_status(new_state)
+        current_status = camera_processor_instance.toggle_detection_status()
+        status_str = "enabled" if current_status else "disabled"
+        flash(f"Object detection {status_str}.", "info")
+        return jsonify({"success": True, "detection_enabled": current_status, "message": f"Detection {status_str}"})
+    else:
+        flash("Camera processor not available.", "danger")
+        return jsonify({"success": False, "message": "Camera processor not available."}), 500
 
 
 # --- Training Page Routes ---

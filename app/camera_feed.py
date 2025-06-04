@@ -19,6 +19,7 @@ along with this program; if not, see
 import cv2
 import time
 import threading
+import numpy as np
 import logging
 from .yolo_utils import YOLOProcessor
 from .gate_control_interface import custom_open_gate, custom_close_gate # Import custom functions
@@ -54,6 +55,7 @@ class CameraProcessor(threading.Thread):
         # Inference FPS control
         self.max_inference_fps = self.config.getint('YOLO', 'MaxInferenceFPS', fallback=0)
         self.inference_frame_delay = 1.0 / self.max_inference_fps if self.max_inference_fps > 0 else 0
+        self.detection_enabled = self.config.get_boolean('YOLO', 'DetectionEnabledByDefault', fallback=True)
 
         self.db_trigger_classes = [] # Cache for class names from DB for gate triggering
 
@@ -99,7 +101,8 @@ class CameraProcessor(threading.Thread):
             self.update_detection_stats_callback({
                 "fps": 0, 
                 "device": self.yolo_processor.get_device() if self.yolo_processor else "N/A",
-                "status": "Camera Error"
+                "status": "Camera Error",
+                "detection_enabled": self.detection_enabled # Ensure status is sent
             })
             return
 
@@ -139,12 +142,24 @@ class CameraProcessor(threading.Thread):
                         time.sleep(sleep_duration)
                     last_inference_time = time.time() # Update after potential sleep
 
-                # Process frame with YOLO
-                processed_frame, detections = self.yolo_processor.detect_and_track(
-                    frame.copy(), # Send a copy
-                    draw_configured_zone=self.render_persistent_activation_zone
-                )
-
+                detections = [] # Default to no detections
+                if self.detection_enabled:
+                    # Process frame with YOLO
+                    processed_frame, detections = self.yolo_processor.detect_and_track(
+                        frame.copy(), # Send a copy
+                        draw_configured_zone=self.render_persistent_activation_zone
+                    )
+                else:
+                    # If detection is disabled, use the raw frame (or a copy)
+                    # We might still want to draw the zone if render_persistent_activation_zone is true
+                    processed_frame = frame.copy() # Start with a copy
+                    if self.render_persistent_activation_zone and self.yolo_processor.activation_zone_points_norm:
+                        # Manually draw zone if needed, even if detection is off
+                        frame_height, frame_width = processed_frame.shape[:2]
+                        pts = np.array([[int(p[0]*frame_width), int(p[1]*frame_height)] for p in self.yolo_processor.activation_zone_points_norm], np.int32)
+                        pts = pts.reshape((-1,1,2))
+                        cv2.polylines(processed_frame,[pts],isClosed=True,color=(255,0,255),thickness=2)
+                
                 # Calculate FPS
                 self.frame_count += 1
                 elapsed_time = time.time() - self.start_time
@@ -162,7 +177,7 @@ class CameraProcessor(threading.Thread):
                 current_time = time.time()
                 target_object_in_zone_this_frame = False
                 
-                if detections: # Ensure detections is not None
+                if self.detection_enabled and detections: # Only process detections if enabled
                     for det in detections:
                         detected_class_name = det.get('class_name')
                         is_in_zone = det.get('is_in_zone', False)
@@ -174,36 +189,40 @@ class CameraProcessor(threading.Thread):
                 
                 gate_action = "IDLE" # Default state
                 if target_object_in_zone_this_frame:
+                    # This block only runs if detection was enabled and found something
                     self.gate_is_open = True
                     self.last_detection_in_zone_time = current_time
                     gate_action = "OPEN"
                     if self.previous_gate_action != "OPEN":
                         custom_open_gate() # Call custom function
-                    # logger.debug(f"Gate OPEN. Object in zone. Last detection in zone time updated: {self.last_detection_in_zone_time}")
                 elif self.gate_is_open: # No target object in zone now, but gate was open
+                    # This logic applies whether detection is on or off,
+                    # as it's about the gate's current state and timers.
                     if current_time - self.last_detection_in_zone_time >= self.gate_open_duration_config:
                         self.gate_is_open = False
                         gate_action = "IDLE" # Gate closes
                         if self.previous_gate_action != "IDLE":
                             custom_close_gate() # Call custom function
-                        # logger.debug(f"Gate CLOSED. Zone clear for {self.gate_open_duration_config}s.")
                     else:
                         gate_action = "OPEN" # Gate remains open during linger period
-                        # logger.debug(f"Gate OPEN (linger). Zone clear, but within {self.gate_open_duration_config}s. Time since last in zone: {current_time - self.last_detection_in_zone_time:.2f}s")
                 
                 # If gate_action is IDLE and was not previously IDLE (e.g. initial state or forced close)
                 # and it wasn't handled by the elif self.gate_is_open block
                 if gate_action == "IDLE" and self.previous_gate_action != "IDLE" and not self.gate_is_open:
                     custom_close_gate()
 
+                # Append detection status to gate_action string for UI clarity
+                current_gate_status_display = f"{gate_action}{'' if self.detection_enabled else ' (Detection OFF)'}"
+
                 self.previous_gate_action = gate_action # Update previous action
                 self.update_detection_stats_callback({
                     "fps": self.fps,
                     "device": self.yolo_processor.get_device(),
                     "last_detection_time": current_time,
-                    "gate_status": gate_action, 
+                    "gate_status": current_gate_status_display, 
                     "detections": detections,
-                    "object_in_zone": target_object_in_zone_this_frame # Add this flag
+                    "object_in_zone": target_object_in_zone_this_frame, # Add this flag
+                    "detection_enabled": self.detection_enabled # Send current detection status
                 })
             except Exception as e:
                 logger.error(f"Unhandled exception in CameraProcessor loop: {e}", exc_info=True)
@@ -215,7 +234,8 @@ class CameraProcessor(threading.Thread):
             self.cap.release()
         logger.info("Camera processing thread stopped.")
         self.update_detection_stats_callback({
-            "status": "Stopped"
+            "status": "Stopped",
+            "detection_enabled": self.detection_enabled
         })
 
     def stop(self):
@@ -232,3 +252,13 @@ class CameraProcessor(threading.Thread):
 
     def get_yolo_processor(self): # To access training methods etc.
         return self.yolo_processor
+
+    def toggle_detection_status(self, status=None):
+        if status is None:
+            self.detection_enabled = not self.detection_enabled
+        else:
+            self.detection_enabled = bool(status)
+        
+        new_status_str = "ENABLED" if self.detection_enabled else "DISABLED"
+        logger.info(f"Object detection has been {new_status_str}.")
+        return self.detection_enabled

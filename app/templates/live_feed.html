@@ -18,10 +18,11 @@
                 <li class="list-group-item"><strong>FPS:</strong> <span id="statFps">N/A</span></li>
                 <li class="list-group-item"><strong>Device:</strong> <span id="statDevice">N/A</span></li>
                 <li class="list-group-item"><strong>Last Update:</strong> <span id="statLastUpdate">N/A</span></li>
+                <li class="list-group-item"><strong>Detection:</strong> <span id="currentDetectionStatus" class="fw-bold">Loading...</span></li>
                 <li class="list-group-item"><strong>Gate Status:</strong> <span id="statGateStatus" class="fw-bold">N/A</span></li>
             </ul>
         </div>
-        <div class="card">
+        <div class="card mt-3"> <!-- Added mt-3 for spacing -->
             <div class="card-header">Manual Gate Control</div>
             <div class="card-body text-center">
                 <form method="POST" action="{{ url_for('main.manual_gate_control') }}" class="d-inline-block me-2">
@@ -32,6 +33,12 @@
                     <input type="hidden" name="action" value="close">
                     <button type="submit" id="manualCloseBtn" class="btn btn-danger"><i class="bi bi-door-closed-fill"></i> Close Gate</button>
                 </form>
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-header">Detection Control</div>
+            <div class="card-body text-center">
+                <button id="toggleDetectionButton" class="btn btn-secondary"><i class="bi bi-toggles"></i> Toggle Detection</button>
             </div>
         </div>
         <div class="card mt-3">
@@ -68,6 +75,22 @@
                 document.getElementById('statDevice').textContent = data.device || 'N/A';
                 document.getElementById('statLastUpdate').textContent = data.last_detection_time_str || 'N/A';
                 
+                // Update Detection Status Display
+                const detectionStatusEl = document.getElementById('currentDetectionStatus');
+                detectionStatusEl.textContent = data.detection_status_text || 'N/A';
+                detectionStatusEl.className = 'fw-bold'; // Reset class
+                if (data.detection_enabled) {
+                    detectionStatusEl.classList.add('text-success');
+                } else {
+                    detectionStatusEl.classList.add('text-danger');
+                }
+
+                // Update Toggle Detection Button Text/Style
+                const toggleButton = document.getElementById('toggleDetectionButton');
+                toggleButton.innerHTML = data.detection_enabled ? '<i class="bi bi-pause-circle-fill"></i> Disable Detection' : '<i class="bi bi-play-circle-fill"></i> Enable Detection';
+                toggleButton.classList.toggle('btn-success', !data.detection_enabled);
+                toggleButton.classList.toggle('btn-warning', data.detection_enabled); // Use warning for disable
+
                 const gateStatusEl = document.getElementById('statGateStatus');
                 gateStatusEl.textContent = data.gate_status || 'N/A';
                 gateStatusEl.className = 'fw-bold'; // Reset class
@@ -107,5 +130,27 @@
     }
     setInterval(updateStats, 2000); // Update every 2 seconds
     updateStats(); // Initial call
+
+    // Add event listener for the toggle button
+    document.getElementById('toggleDetectionButton').addEventListener('click', function() {
+        fetch('{{ url_for("main.toggle_detection") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                // Add any necessary CSRF tokens or other headers if your app uses them
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log("Detection status toggled. New status: " + data.detection_enabled);
+                // Update stats display immediately after successful toggle
+                updateStats(); 
+            } else {
+                console.error("Failed to toggle detection: " + data.message);
+                // You might want to show an alert or a more user-friendly error message here
+            }
+        });
+    });
 </script>
 {% endblock %}

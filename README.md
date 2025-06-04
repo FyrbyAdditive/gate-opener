@@ -1,6 +1,6 @@
 # Gate Opener
 ## About
-A python web application for opening and closing a gate with AI detection of... whatever you want to trigger it. Robot lawnmowers, ride on lawnmowers people, animals, cars and so on. It is also possible to control the gate manually.
+A python web application for opening and closing a gate with AI detection of... whatever you want to trigger it. Robot lawnmowers, ride on lawnmowers, people, animals, cars and so on. It is also possible to control the gate manually.
 
 You can choose to use the existing categories provided by the model, but also provided is a really simple training interface that allows you to get good results by training it on real things in your yard, so how you trigger it is entirely up to you!
 
@@ -28,6 +28,8 @@ There are various ways to setup a camera including:
 - Video file paths (e.g., /path/to/video.mp4)
 - RTSP streams (e.g., rtsp://username:password@ip_address:port/stream_path)
 - HTTP MJPEG streams (e.g., http://ip_address/video.mjpg
+
+The video resolution should be configured to be as low as possible, but high enough that it recognises your objects. This is because the resolution has a massive impact on performance which can drop to a very low FPS if the camera resolution is set too high.
 
 ### Models
 If you have performance issues, you may like to try a smaller model. By default, yolov8s.pt is used which is a small sized model. Here are the available models, in order of size:
