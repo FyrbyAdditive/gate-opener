@@ -357,7 +357,7 @@ def edit_image_page(image_id):
     if not image_record:
         flash("Image not found.", "danger")
         return redirect(url_for('main.training_page'))
-
+    
     if request.method == 'POST':
         annotations_data = request.form.get('annotations') # JSON string from JS
         # Clear existing annotations for this image first
@@ -379,14 +379,19 @@ def edit_image_page(image_id):
 
                 # Annotations from JS are x, y, w, h (top-left corner, pixel values)
                 # Convert to YOLO format: x_center, y_center, width, height (all relative to image size)
-                img_w, img_h = image_record['width'], image_record['height']
+                # Use the dimensions from the loaded image_record
+                img_w_db, img_h_db = image_record['width'], image_record['height']
+                if not img_w_db or not img_h_db or img_w_db <= 0 or img_h_db <= 0:
+                    logger.error(f"Skipping annotation for image {image_id} due to invalid DB dimensions: W={img_w_db}, H={img_h_db}.")
+                    flash(f"Error: Image {image_id} has invalid dimensions in DB. Annotation skipped.", "danger")
+                    continue # Skip this annotation
                 
                 x, y, w, h = float(ann['x']), float(ann['y']), float(ann['w']), float(ann['h'])
 
-                x_center_rel = (x + w / 2) / img_w
-                y_center_rel = (y + h / 2) / img_h
-                width_rel = w / img_w
-                height_rel = h / img_h
+                x_center_rel = (x + w / 2) / img_w_db
+                y_center_rel = (y + h / 2) / img_h_db
+                width_rel = w / img_w_db
+                height_rel = h / img_h_db
                 
                 add_annotation(image_id, db_class['id'], x_center_rel, y_center_rel, width_rel, height_rel)
                 logger.info(f"Saved annotation for image {image_id} with class '{js_class_name}' (ID: {db_class['id']})")
@@ -406,12 +411,12 @@ def edit_image_page(image_id):
     # (height_rel * img_h) = h_abs
     js_annotations = []
     if image_record['width'] and image_record['height']:
-        img_w, img_h = image_record['width'], image_record['height']
+        img_w_db_display, img_h_db_display = image_record['width'], image_record['height']
         for ann in existing_annotations:
-            x_abs = (ann['x_center'] * img_w) - (ann['width'] * img_w / 2)
-            y_abs = (ann['y_center'] * img_h) - (ann['height'] * img_h / 2)
-            w_abs = ann['width'] * img_w
-            h_abs = ann['height'] * img_h
+            x_abs = (ann['x_center'] * img_w_db_display) - (ann['width'] * img_w_db_display / 2)
+            y_abs = (ann['y_center'] * img_h_db_display) - (ann['height'] * img_h_db_display / 2)
+            w_abs = ann['width'] * img_w_db_display
+            h_abs = ann['height'] * img_h_db_display
             js_annotations.append({
                 "x": round(x_abs), "y": round(y_abs), 
                 "w": round(w_abs), "h": round(h_abs),

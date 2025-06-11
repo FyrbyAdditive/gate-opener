@@ -160,13 +160,13 @@ class YOLOProcessor:
                 detections_data.append(detection_info)
         
         # Draw activation zone polygon
-        logger.debug(f"Attempting to draw activation zone. Points: {self.activation_zone_points_norm}, Frame WxH: {frame_width}x{frame_height}")
+        # logger.debug(f"Attempting to draw activation zone. Points: {self.activation_zone_points_norm}, Frame WxH: {frame_width}x{frame_height}")
         if draw_configured_zone:
             if self.activation_zone_points_norm and len(self.activation_zone_points_norm) >= 3:
                 pts = np.array([[int(p[0]*frame_width), int(p[1]*frame_height)] for p in self.activation_zone_points_norm], np.int32)
                 pts = pts.reshape((-1,1,2))
                 cv2.polylines(frame,[pts],isClosed=True,color=(255,0,255),thickness=2) # Magenta color for zone
-                logger.debug("Configured activation zone drawn on stream.")
+                # logger.debug("Configured activation zone drawn on stream.")
             else:
                 logger.debug("Skipped drawing configured activation zone (no points or <3 points).")
 

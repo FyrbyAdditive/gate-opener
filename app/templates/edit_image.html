@@ -107,13 +107,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     function drawRect(rect, color = 'red') {
+        // rect here is expected to have x, y, w, h relative to the *original* image dimensions
+        const naturalWidth = image.naturalWidth;
+        const naturalHeight = image.naturalHeight;
+        const clientWidth = image.clientWidth;
+        const clientHeight = image.clientHeight;
+
+        if (naturalWidth === 0 || naturalHeight === 0 || clientWidth === 0 || clientHeight === 0) return; // Avoid division by zero or drawing if image not ready
+
+        const displayScaleX = clientWidth / naturalWidth;
+        const displayScaleY = clientHeight / naturalHeight;
+
+        // Scale original-relative coordinates to display-relative for drawing
+        const displayX = rect.x * displayScaleX;
+        const displayY = rect.y * displayScaleY;
+        const displayW = rect.w * displayScaleX;
+        const displayH = rect.h * displayScaleY;
+
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
-        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        ctx.strokeRect(displayX, displayY, displayW, displayH);
+
         if (rect.className) {
             ctx.fillStyle = color;
             ctx.font = '12px Arial';
-            ctx.fillText(rect.className, rect.x + 2, rect.y + 12);
+            // Adjust text position based on display coordinates
+            ctx.fillText(rect.className, displayX + 2, displayY + 12 > 12 ? displayY + 12 : 12);
         }
     }
 
@@ -121,7 +140,10 @@ document.addEventListener('DOMContentLoaded', function() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         annotations.forEach(ann => drawRect(ann));
         if (drawing && currentRect.w && currentRect.h) {
-            drawRect(currentRect, 'blue'); // Draw current interactive box
+            // currentRect during drawing is display-relative, so draw it directly without re-scaling
+            ctx.strokeStyle = 'blue';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(currentRect.x, currentRect.y, currentRect.w, currentRect.h);
         }
         updateAnnotationListUI();
     }
@@ -134,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const rect = canvas.getBoundingClientRect();
         startX = e.clientX - rect.left;
         startY = e.clientY - rect.top;
-        drawing = true;
+        drawing = true; // currentRect will store display-relative coords during drawing
         currentRect = { x: startX, y: startY, w: 0, h: 0, className: classSelect.value };
     });
 
@@ -152,21 +174,41 @@ document.addEventListener('DOMContentLoaded', function() {
     canvas.addEventListener('mouseup', function() {
         if (!drawing) return;
         drawing = false;
-        // Normalize rectangle (width/height can be negative if drawn backwards)
-        if (currentRect.w < 0) {
-            currentRect.x += currentRect.w;
-            currentRect.w = Math.abs(currentRect.w);
+        // currentRect has display-relative coordinates
+        let finalRect = {...currentRect}; // Copy
+
+        // Normalize rectangle (width/height can be negative if drawn backwards) for display-relative
+        if (finalRect.w < 0) {
+            finalRect.x += finalRect.w;
+            finalRect.w = Math.abs(finalRect.w);
         }
-        if (currentRect.h < 0) {
-            currentRect.y += currentRect.h;
-            currentRect.h = Math.abs(currentRect.h);
+        if (finalRect.h < 0) {
+            finalRect.y += finalRect.h;
+            finalRect.h = Math.abs(finalRect.h);
         }
 
-        if (currentRect.w > 5 && currentRect.h > 5) { // Minimum size for a box
-            annotations.push({...currentRect});
+        if (finalRect.w > 5 && finalRect.h > 5) { // Minimum size for a box
+            // Scale to original image dimensions before storing
+            const naturalWidth = image.naturalWidth;
+            const naturalHeight = image.naturalHeight;
+            const clientWidth = image.clientWidth;
+            const clientHeight = image.clientHeight;
+
+            if (clientWidth > 0 && clientHeight > 0) { // Avoid division by zero
+                const scaleX = naturalWidth / clientWidth;
+                const scaleY = naturalHeight / clientHeight;
+
+                annotations.push({
+                    x: finalRect.x * scaleX,
+                    y: finalRect.y * scaleY,
+                    w: finalRect.w * scaleX,
+                    h: finalRect.h * scaleY,
+                    className: finalRect.className
+                });
+            }
         }
         currentRect = {}; // Reset current drawing rect
-        drawAnnotations();
+        drawAnnotations(); // Redraw with the new scaled annotation
     });
     
     canvas.addEventListener('mouseleave', function() { // If mouse leaves canvas while drawing
@@ -174,11 +216,29 @@ document.addEventListener('DOMContentLoaded', function() {
             // Optionally finalize the box or cancel it
             // For simplicity, let's finalize if it has some size
             drawing = false;
-             if (currentRect.w < 0) { currentRect.x += currentRect.w; currentRect.w = Math.abs(currentRect.w); }
-             if (currentRect.h < 0) { currentRect.y += currentRect.h; currentRect.h = Math.abs(currentRect.h); }
-            if (currentRect.w > 5 && currentRect.h > 5) {
-                annotations.push({...currentRect});
+            let finalRect = {...currentRect};
+             if (finalRect.w < 0) { finalRect.x += finalRect.w; finalRect.w = Math.abs(finalRect.w); }
+             if (finalRect.h < 0) { finalRect.y += finalRect.h; finalRect.h = Math.abs(finalRect.h); }
+
+            if (finalRect.w > 5 && finalRect.h > 5) {
+                const naturalWidth = image.naturalWidth;
+                const naturalHeight = image.naturalHeight;
+                const clientWidth = image.clientWidth;
+                const clientHeight = image.clientHeight;
+
+                if (clientWidth > 0 && clientHeight > 0) {
+                    const scaleX = naturalWidth / clientWidth;
+                    const scaleY = naturalHeight / clientHeight;
+                    annotations.push({
+                        x: finalRect.x * scaleX,
+                        y: finalRect.y * scaleY,
+                        w: finalRect.w * scaleX,
+                        h: finalRect.h * scaleY,
+                        className: finalRect.className
+                    });
+                }
             }
+
             currentRect = {};
             drawAnnotations();
         }
@@ -199,8 +259,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     annotationForm.addEventListener('submit', function(e) {
-        // The annotations array already contains x, y, w, h in pixel values relative to the displayed image.
-        // The backend will convert these to YOLO format (relative to natural image dimensions).
+        // The annotations array now already contains original-image-relative coordinates
         annotationsDataInput.value = JSON.stringify(annotations);
     });
 
@@ -213,7 +272,10 @@ document.addEventListener('DOMContentLoaded', function() {
         annotations.forEach((ann, index) => {
             const listItem = document.createElement('li');
             listItem.className = 'list-group-item small';
-            listItem.textContent = `Box ${index + 1}: ${ann.className} (x:${Math.round(ann.x)}, y:${Math.round(ann.y)}, w:${Math.round(ann.w)}, h:${Math.round(ann.h)})`;
+            // Displaying original-relative coordinates in the list
+            listItem.textContent = `Box ${index + 1}: ${ann.className} ` +
+                                   `(Orig. x:${Math.round(ann.x)}, y:${Math.round(ann.y)}, ` +
+                                   `w:${Math.round(ann.w)}, h:${Math.round(ann.h)})`;
             annotationListEl.appendChild(listItem);
         });
     }
@@ -225,4 +287,3 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
-
